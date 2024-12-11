@@ -52,22 +52,32 @@ def analyze_conversation(text, speaker):
             return "Resolution"
     return "General"
 
-# Function to generate a summary of the agent's performance
-def generate_summary(conversations):
+# Function to generate a summary and rationale of the agent's performance
+def generate_summary_and_rationale(conversations):
     agent_assistance = False
+    rationale = []
+    
     for speaker, text in conversations:
         if speaker == "Agent":
             # Check for resolution-related words
             if "help" in text or "resolve" in text or "assist" in text:
                 agent_assistance = True
+                rationale.append("Agent provided a solution to the customer's issue.")
+                
             # Check if agent apologizes or shows empathy
             elif "apologize" in text or "understand" in text:
                 agent_assistance = True
+                rationale.append("Agent showed empathy by apologizing and acknowledging the customer's frustration.")
+                
+            # Check for compensation or assurance
+            elif "compensation" in text or "credits" in text:
+                agent_assistance = True
+                rationale.append("Agent offered compensation or reassurance to the customer.")
                 
     if agent_assistance:
-        return "The agent was able to assist the customer."
+        return "The agent was able to assist the customer.", rationale
     else:
-        return "The agent was unable to truly assist the customer."
+        return "The agent was unable to truly assist the customer.", ["Agent failed to provide a solution or satisfactory resolution."]
 
 # Display and process transcript if uploaded
 if uploaded_file is not None:
@@ -105,10 +115,15 @@ if uploaded_file is not None:
         df = pd.DataFrame(metrics)
         st.write(df)
         
-        # Display the summary of whether the agent truly assisted or not
-        summary = generate_summary(conversations)
+        # Display the summary and rationale of whether the agent truly assisted or not
+        summary, rationale = generate_summary_and_rationale(conversations)
         st.write("### Agent Assistance Summary")
         st.write(summary)
+        
+        # Display the rationale for the agent's assistance
+        st.write("### Rationale for Assistance:")
+        for reason in rationale:
+            st.write(f"- {reason}")
         
         # Display charts for analysis
         st.write("Metrics Overview")
