@@ -3,3 +3,5 @@ google-generativeai
 matplotlib
 pandas 
 textblob
+seaborn 
+wordcloud
