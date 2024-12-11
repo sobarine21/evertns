@@ -1,24 +1,27 @@
 import streamlit as st
 import pandas as pd
-from textblob import TextBlob
 import matplotlib.pyplot as plt
 import seaborn as sns
+from textblob import TextBlob
 from wordcloud import WordCloud
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.decomposition import LatentDirichletAllocation
+import time
+import re
 
-# Streamlit App UI - Beautiful header and custom theme
-st.set_page_config(page_title="Customer Support Transcript Analyzer", layout="wide")
-st.title("Customer Support Performance Analysis")
+# Streamlit app configuration
+st.set_page_config(page_title="Customer Support Analysis", layout="wide")
+st.title("Customer Support Transcript Analyzer")
 st.markdown("""
-    Analyze agent-customer interactions, detect emotions, evaluate empathy and assistance, and identify improvement areas.
-    **Just upload the call transcript below!**
+    Upload the transcript to analyze agent performance, sentiment, empathy, and much more. Get insights and actionable feedback!
 """)
-st.markdown("___")
 
-# File Upload Section
-uploaded_file = st.file_uploader("Upload Call Transcript", type=["txt"])
+# File upload
+uploaded_file = st.file_uploader("Upload Transcript", type=["txt", "pdf"])
 
-# Function to parse and clean transcript
+# Helper functions
 def parse_transcript(transcript_text):
+    """Parse the transcript text into a list of tuples (speaker, text)."""
     conversations = []
     speaker = None
     for line in transcript_text.split("\n"):
@@ -31,16 +34,16 @@ def parse_transcript(transcript_text):
                 conversations.append((speaker, line.strip()))
     return conversations
 
-# Function to check for profanity
 def check_profanity(text):
-    profanities = ["bsdk", "badword1", "badword2"]  # Add other bad words here
+    """Check if any profanity is present in the text."""
+    profanities = ["bsdk", "badword1", "badword2"]  # Add more profanities here
     for word in profanities:
         if word in text.lower():
             return True
     return False
 
-# Function to analyze tone using TextBlob and more refined analysis
-def analyze_tone(text):
+def sentiment_analysis(text):
+    """Analyze sentiment polarity using TextBlob."""
     blob = TextBlob(text)
     sentiment = blob.sentiment.polarity
     if sentiment > 0.1:
@@ -50,135 +53,107 @@ def analyze_tone(text):
     else:
         return "Neutral"
 
-# Function to classify empathy and context
-def classify_empathy_and_context(text):
-    if any(word in text.lower() for word in ["sorry", "apologize", "understand", "feel", "sympathize"]):
-        return "Empathy"
-    elif any(word in text.lower() for word in ["help", "assist", "resolve", "solution"]):
-        return "Assistance"
-    else:
-        return "Neutral"
-
-# Function to analyze conversation context with advanced NLP
-def analyze_conversation(text, speaker):
-    if speaker == "Agent":
-        if any(word in text.lower() for word in ["help", "assist", "resolve"]):
-            return "Solution"
-        elif any(word in text.lower() for word in ["sorry", "understand"]):
-            return "Empathy"
-    return "General"
-
-# Function to analyze keywords and emotional patterns
-def emotion_keywords(text):
-    positive_keywords = ["thanks", "grateful", "appreciate", "pleased", "happy"]
-    negative_keywords = ["frustrated", "angry", "disappointed", "sorry", "upset"]
-    
+def emotion_detection(text):
+    """Detect emotions based on specific keywords."""
+    positive_keywords = ["thanks", "appreciate", "grateful", "happy"]
+    negative_keywords = ["angry", "frustrated", "upset", "disappointed"]
     if any(word in text.lower() for word in positive_keywords):
         return "Positive Emotion"
     elif any(word in text.lower() for word in negative_keywords):
         return "Negative Emotion"
     return "Neutral Emotion"
 
-# Function to generate a comprehensive analysis summary and rationale
-def generate_summary_and_rationale(conversations):
-    assistance_provided = False
-    empathy_shown = False
-    rationale = []
-    
+def topic_modeling(text_data):
+    """Use LDA to extract topics from the conversation."""
+    vectorizer = CountVectorizer(stop_words="english")
+    data_vectorized = vectorizer.fit_transform(text_data)
+    lda = LatentDirichletAllocation(n_components=2, random_state=42)
+    lda.fit(data_vectorized)
+    topics = lda.components_
+    return topics
+
+def key_phrase_extraction(text):
+    """Extract key phrases using simple regex (could use more advanced NLP tools)."""
+    key_phrases = re.findall(r'\b(?:issue|problem|help|solution|assist)\b', text, re.IGNORECASE)
+    return key_phrases
+
+def generate_report(conversations):
+    """Generate a detailed report analyzing the conversation."""
+    empathy = False
+    assistance = False
     for speaker, text in conversations:
         if speaker == "Agent":
-            # Check for assistance or resolution-related keywords
-            if "help" in text or "resolve" in text or "assist" in text:
-                assistance_provided = True
-                rationale.append(f"Agent provided assistance or resolution: '{text}'")
-                
-            # Check if agent apologized or showed empathy
-            elif "sorry" in text or "understand" in text:
-                empathy_shown = True
-                rationale.append(f"Agent showed empathy: '{text}'")
-                
-            # Check for negative sentiment or failure to resolve
-            elif "cannot" in text or "unable" in text:
-                rationale.append(f"Agent was unable to resolve: '{text}'")
-                
-    if assistance_provided:
-        return "The agent was able to assist the customer effectively.", rationale
-    elif empathy_shown:
-        return "The agent showed empathy but did not fully resolve the issue.", rationale
-    else:
-        return "The agent was unable to truly assist the customer.", ["Agent failed to provide a solution or resolution."]
+            if "sorry" in text or "understand" in text:
+                empathy = True
+            if "help" in text or "assist" in text:
+                assistance = True
+    return empathy, assistance
 
-# Display and process transcript if uploaded
-if uploaded_file is not None:
-    transcript_text = uploaded_file.read().decode("utf-8")
+def process_transcript(transcript_text):
+    """Process the transcript and provide a detailed analysis."""
     conversations = parse_transcript(transcript_text)
+    empathy, assistance = generate_report(conversations)
     
-    # Show the conversations in an interactive way
-    st.write("### Full Transcript")
-    for speaker, text in conversations:
-        st.write(f"**{speaker}:** {text}")
-    
-    # Button to analyze the transcript
-    if st.button("Analyze Transcript"):
-        # Initialize analysis metrics
-        metrics = {
-            "Empathy": [],
-            "Assistance": [],
-            "Tone": [],
-            "Profanity": [],
-            "Emotion": [],
-            "Context": []
-        }
+    sentiment = [sentiment_analysis(text) for _, text in conversations]
+    emotions = [emotion_detection(text) for _, text in conversations]
+    key_phrases = [key_phrase_extraction(text) for _, text in conversations]
+
+    topics = topic_modeling([text for _, text in conversations])
+
+    return {
+        "conversations": conversations,
+        "sentiment": sentiment,
+        "emotions": emotions,
+        "key_phrases": key_phrases,
+        "topics": topics,
+        "empathy": empathy,
+        "assistance": assistance,
+    }
+
+# Display analysis options
+if uploaded_file is not None:
+    transcript_text = uploaded_file.read().decode("utf-8") if uploaded_file.type == "text/plain" else "PDF file detected, please upload a text file for analysis."
+
+    st.write("### Transcript Preview")
+    st.text_area("Transcript", transcript_text, height=200)
+
+    if st.button("Start Analysis"):
+        with st.spinner("Analyzing... This may take a few seconds..."):
+            analysis_result = process_transcript(transcript_text)
         
-        # Analyze each conversation
-        for speaker, text in conversations:
-            try:
-                profanity = check_profanity(text)
-                tone = analyze_tone(text)
-                context = analyze_conversation(text, speaker)
-                emotion = emotion_keywords(text)
-                empathy_context = classify_empathy_and_context(text)
-                
-                # Update metrics
-                metrics["Profanity"].append("Yes" if profanity else "No")
-                metrics["Tone"].append(tone)
-                metrics["Emotion"].append(emotion)
-                metrics["Context"].append(context)
-                metrics["Empathy"].append("Yes" if empathy_context == "Empathy" else "No")
-                metrics["Assistance"].append("Yes" if empathy_context == "Assistance" else "No")
-                
-            except Exception as e:
-                st.error(f"Error: {e}")
+        # Display results
+        st.write("### Sentiment Analysis")
+        sentiment_count = pd.Series(analysis_result["sentiment"]).value_counts()
+        st.bar_chart(sentiment_count)
+
+        st.write("### Emotional Tone Detection")
+        emotion_count = pd.Series(analysis_result["emotions"]).value_counts()
+        st.bar_chart(emotion_count)
+
+        st.write("### Key Phrases Detected")
+        st.write(analysis_result["key_phrases"])
+
+        st.write("### Empathy and Assistance Evaluation")
+        if analysis_result["empathy"]:
+            st.write("The agent showed empathy during the conversation.")
+        else:
+            st.write("The agent did not show clear empathy.")
+
+        if analysis_result["assistance"]:
+            st.write("The agent provided assistance to the customer.")
+        else:
+            st.write("The agent did not provide clear assistance.")
+
+        # Visualizing topics with a word cloud
+        st.write("### Topic Modeling (Top Keywords)")
+        topics = analysis_result["topics"]
+        for topic_idx, topic in enumerate(topics):
+            st.write(f"Topic #{topic_idx + 1}:")
+            words = [f"{word}" for word in topic.argsort()[:-11:-1]]
+            st.write(" ".join(words))
         
-        # Show metrics in a table
-        df = pd.DataFrame(metrics)
-        st.write(df)
-        
-        # Generate and display the summary and rationale
-        summary, rationale = generate_summary_and_rationale(conversations)
-        st.write("### Agent Assistance Summary")
-        st.write(summary)
-        
-        # Show rationale with detailed context
-        st.write("### Rationale for Assistance:")
-        for reason in rationale:
-            st.write(f"- {reason}")
-        
-        # Visual representation of metrics (using Seaborn for elegant visualizations)
-        st.write("### Visual Analytics")
-        fig, ax = plt.subplots(figsize=(10, 6))
-        sns.countplot(data=df, x="Tone", palette="coolwarm", ax=ax)
-        st.pyplot(fig)
-        
-        # Emotion Word Cloud
-        st.write("### Emotion Word Cloud")
-        wordcloud = WordCloud(width=800, height=400).generate(' '.join(df["Emotion"]))
-        plt.figure(figsize=(8, 6))
-        plt.imshow(wordcloud, interpolation="bilinear")
-        plt.axis("off")
-        st.pyplot(plt)
-        
-        # Export the results as CSV
-        if st.button("Export Results"):
-            df.to_csv("call_analysis_results.csv", index=False)
-            st.success("Results have been saved as 'call_analysis_results.csv'")
+        # Allowing download of the analysis results
+        if st.button("Download Report"):
+            results_df = pd.DataFrame(analysis_result)
+            results_df.to_csv("conversation_analysis_report.csv", index=False)
+            st.success("Report has been saved as 'conversation_analysis_report.csv'")
