@@ -8,3 +8,4 @@ wordcloud
 scikit-learn 
 PyPDF2
 vaderSentiment
+spacy
