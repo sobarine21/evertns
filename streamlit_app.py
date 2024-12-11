@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from textblob import TextBlob
+import matplotlib.pyplot as plt  # Add this import
 
 # Streamlit App UI
 st.title("Customer Support Transcript Analyzer")
@@ -97,4 +98,3 @@ if uploaded_file is not None:
         if st.button("Export Results"):
             df.to_csv("call_analysis_results.csv")
             st.success("Results saved as call_analysis_results.csv")
-
