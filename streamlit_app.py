@@ -1,154 +1,159 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-import spacy
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.decomposition import LatentDirichletAllocation
-from deepmoji import DeepMoji
-from deepmoji.model_def import deepmoji_model
-from keras.preprocessing.sequence import pad_sequences
 import matplotlib.pyplot as plt
+import seaborn as sns
+from textblob import TextBlob
 from wordcloud import WordCloud
-import os
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.decomposition import LatentDirichletAllocation
+import time
+import re
 
-# Setup
-nlp = spacy.load("en_core_web_sm")  # Load spaCy model
-analyzer = SentimentIntensityAnalyzer()  # VADER sentiment analyzer
-deepmoji_model = deepmoji_model.load_model()  # Load DeepMoji model
+# Streamlit app configuration
+st.set_page_config(page_title="Customer Support Analysis", layout="wide")
+st.title("Customer Support Transcript Analyzer")
+st.markdown("""
+    Upload the transcript to analyze agent performance, sentiment, empathy, and much more. Get insights and actionable feedback!
+""")
 
-# Streamlit App
-st.title("Customer Support Transcript Analysis")
+# File upload
+uploaded_file = st.file_uploader("Upload Transcript", type=["txt", "pdf"])
 
-# File uploader
-uploaded_file = st.file_uploader("Upload CSV with customer support transcripts", type=["csv"])
+# Helper functions
+def parse_transcript(transcript_text):
+    """Parse the transcript text into a list of tuples (speaker, text)."""
+    conversations = []
+    speaker = None
+    for line in transcript_text.split("\n"):
+        if "Agent" in line:
+            speaker = "Agent"
+        elif "Customer" in line:
+            speaker = "Customer"
+        else:
+            if speaker:
+                conversations.append((speaker, line.strip()))
+    return conversations
 
-if uploaded_file:
-    # Load CSV into DataFrame
-    df = pd.read_csv(uploaded_file)
-    st.write("Uploaded Transcript Data", df.head())
+def check_profanity(text):
+    """Check if any profanity is present in the text."""
+    profanities = ["bsdk", "badword1", "badword2"]  # Add more profanities here
+    for word in profanities:
+        if word in text.lower():
+            return True
+    return False
 
-    # Sentiment Analysis Function using VADER
-    def analyze_sentiment(text):
-        sentiment_score = analyzer.polarity_scores(text)
-        return sentiment_score['compound']
+def sentiment_analysis(text):
+    """Analyze sentiment polarity using TextBlob."""
+    blob = TextBlob(text)
+    sentiment = blob.sentiment.polarity
+    if sentiment > 0.1:
+        return "Positive"
+    elif sentiment < -0.1:
+        return "Negative"
+    else:
+        return "Neutral"
 
-    # Named Entity Recognition (NER) with SpaCy
-    def extract_entities(text):
-        doc = nlp(text)
-        entities = [(entity.text, entity.label_) for entity in doc.ents]
-        return entities
+def emotion_detection(text):
+    """Detect emotions based on specific keywords."""
+    positive_keywords = ["thanks", "appreciate", "grateful", "happy"]
+    negative_keywords = ["angry", "frustrated", "upset", "disappointed"]
+    if any(word in text.lower() for word in positive_keywords):
+        return "Positive Emotion"
+    elif any(word in text.lower() for word in negative_keywords):
+        return "Negative Emotion"
+    return "Neutral Emotion"
 
-    # Emotion Detection with DeepMoji
-    def predict_emotion(text):
-        tokenizer = DeepMojiTokenizer()
-        tokens = tokenizer.tokenize(text)
-        padded_tokens = pad_sequences([tokens], maxlen=30, truncating='post')
-        prediction = deepmoji_model.predict(padded_tokens)
-        return prediction.argmax(axis=1)[0]  # Emotion label
+def topic_modeling(text_data):
+    """Use LDA to extract topics from the conversation."""
+    vectorizer = CountVectorizer(stop_words="english")
+    data_vectorized = vectorizer.fit_transform(text_data)
+    lda = LatentDirichletAllocation(n_components=2, random_state=42)
+    lda.fit(data_vectorized)
+    topics = lda.components_
+    return topics
 
-    # Topic Modeling using LDA
-    def extract_topics(documents, n_topics=3):
-        vectorizer = TfidfVectorizer(stop_words='english')
-        X = vectorizer.fit_transform(documents)
-        lda = LatentDirichletAllocation(n_components=n_topics, random_state=42)
-        lda_topics = lda.fit_transform(X)
+def key_phrase_extraction(text):
+    """Extract key phrases using simple regex (could use more advanced NLP tools)."""
+    key_phrases = re.findall(r'\b(?:issue|problem|help|solution|assist)\b', text, re.IGNORECASE)
+    return key_phrases
 
-        terms = vectorizer.get_feature_names_out()
-        topics = []
-        for idx, topic in enumerate(lda.components_):
-            topics.append([terms[i] for i in topic.argsort()[:-6 - 1:-1]])
-        return topics
+def generate_report(conversations):
+    """Generate a detailed report analyzing the conversation."""
+    empathy = False
+    assistance = False
+    for speaker, text in conversations:
+        if speaker == "Agent":
+            if "sorry" in text or "understand" in text:
+                empathy = True
+            if "help" in text or "assist" in text:
+                assistance = True
+    return empathy, assistance
 
-    # Process each transcript
-    sentiments = []
-    emotions = []
-    topics = []
+def process_transcript(transcript_text):
+    """Process the transcript and provide a detailed analysis."""
+    conversations = parse_transcript(transcript_text)
+    empathy, assistance = generate_report(conversations)
+    
+    sentiment = [sentiment_analysis(text) for _, text in conversations]
+    emotions = [emotion_detection(text) for _, text in conversations]
+    key_phrases = [key_phrase_extraction(text) for _, text in conversations]
 
-    for text in df['transcript']:  # Assuming the column containing transcripts is named 'transcript'
-        sentiments.append(analyze_sentiment(text))
-        emotions.append(predict_emotion(text))
-        entities = extract_entities(text)
-        topics.append(entities)
+    topics = topic_modeling([text for _, text in conversations])
 
-    # Add sentiment, emotion, and topics to DataFrame
-    df['sentiment'] = sentiments
-    df['emotion'] = emotions
-    df['topics'] = topics
+    return {
+        "conversations": conversations,
+        "sentiment": sentiment,
+        "emotions": emotions,
+        "key_phrases": key_phrases,
+        "topics": topics,
+        "empathy": empathy,
+        "assistance": assistance,
+    }
 
-    # Display the DataFrame with sentiment and emotion labels
-    st.write("Transcript Analysis with Sentiment, Emotion, and Topics", df)
+# Display analysis options
+if uploaded_file is not None:
+    transcript_text = uploaded_file.read().decode("utf-8") if uploaded_file.type == "text/plain" else "PDF file detected, please upload a text file for analysis."
 
-    # Visualization: Sentiment Distribution
-    def plot_sentiment_distribution(sentiments):
-        plt.figure(figsize=(10, 6))
-        plt.hist(sentiments, bins=20, color='skyblue', edgecolor='black')
-        plt.title("Sentiment Distribution of Conversations")
-        plt.xlabel("Sentiment Score")
-        plt.ylabel("Frequency")
-        st.pyplot()
+    st.write("### Transcript Preview")
+    st.text_area("Transcript", transcript_text, height=200)
 
-    plot_sentiment_distribution(sentiments)
+    if st.button("Start Analysis"):
+        with st.spinner("Analyzing... This may take a few seconds..."):
+            analysis_result = process_transcript(transcript_text)
+        
+        # Display results
+        st.write("### Sentiment Analysis")
+        sentiment_count = pd.Series(analysis_result["sentiment"]).value_counts()
+        st.bar_chart(sentiment_count)
 
-    # Visualization: Word Cloud
-    def generate_wordcloud(texts):
-        text = " ".join(texts)
-        wordcloud = WordCloud(width=800, height=400).generate(text)
-        plt.figure(figsize=(10, 6))
-        plt.imshow(wordcloud, interpolation='bilinear')
-        plt.axis("off")
-        st.pyplot()
+        st.write("### Emotional Tone Detection")
+        emotion_count = pd.Series(analysis_result["emotions"]).value_counts()
+        st.bar_chart(emotion_count)
 
-    generate_wordcloud(df['transcript'])
+        st.write("### Key Phrases Detected")
+        st.write(analysis_result["key_phrases"])
 
-    # Visualization: Topic Modeling
-    def plot_topic_modeling(topics):
-        topic_text = "\n".join([f"Topic {i+1}: " + " ".join(topic) for i, topic in enumerate(topics)])
-        st.text(topic_text)
+        st.write("### Empathy and Assistance Evaluation")
+        if analysis_result["empathy"]:
+            st.write("The agent showed empathy during the conversation.")
+        else:
+            st.write("The agent did not show clear empathy.")
 
-    plot_topic_modeling(extract_topics(df['transcript']))
+        if analysis_result["assistance"]:
+            st.write("The agent provided assistance to the customer.")
+        else:
+            st.write("The agent did not provide clear assistance.")
 
-    # Save output as CSV
-    output_file = "transcript_analysis.csv"
-    df.to_csv(output_file, index=False)
-
-    # Provide download link for the output CSV
-    st.download_button(
-        label="Download Transcript Analysis CSV",
-        data=df.to_csv(index=False),
-        file_name=output_file,
-        mime="text/csv"
-    )
-
-    # Save and download visualization images
-    def save_and_download_plot():
-        # Sentiment Distribution Plot
-        plt.figure(figsize=(10, 6))
-        plt.hist(sentiments, bins=20, color='skyblue', edgecolor='black')
-        plt.title("Sentiment Distribution of Conversations")
-        plt.xlabel("Sentiment Score")
-        plt.ylabel("Frequency")
-        sentiment_plot_path = "/mnt/data/sentiment_distribution.png"
-        plt.savefig(sentiment_plot_path)
-        st.download_button(
-            label="Download Sentiment Distribution Plot",
-            data=open(sentiment_plot_path, "rb").read(),
-            file_name="sentiment_distribution.png",
-            mime="image/png"
-        )
-
-        # Word Cloud Plot
-        wordcloud = WordCloud(width=800, height=400).generate(" ".join(df['transcript']))
-        plt.figure(figsize=(10, 6))
-        plt.imshow(wordcloud, interpolation='bilinear')
-        plt.axis("off")
-        wordcloud_plot_path = "/mnt/data/wordcloud.png"
-        plt.savefig(wordcloud_plot_path)
-        st.download_button(
-            label="Download Word Cloud Plot",
-            data=open(wordcloud_plot_path, "rb").read(),
-            file_name="wordcloud.png",
-            mime="image/png"
-        )
-
-    save_and_download_plot()
+        # Visualizing topics with a word cloud
+        st.write("### Topic Modeling (Top Keywords)")
+        topics = analysis_result["topics"]
+        for topic_idx, topic in enumerate(topics):
+            st.write(f"Topic #{topic_idx + 1}:")
+            words = [f"{word}" for word in topic.argsort()[:-11:-1]]
+            st.write(" ".join(words))
+        
+        # Allowing download of the analysis results
+        if st.button("Download Report"):
+            results_df = pd.DataFrame(analysis_result)
+            results_df.to_csv("conversation_analysis_report.csv", index=False)
+            st.success("Report has been saved as 'conversation_analysis_report.csv'")
