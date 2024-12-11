@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from textblob import TextBlob
-import matplotlib.pyplot as plt  # Add this import
+import matplotlib.pyplot as plt
 
 # Streamlit App UI
 st.title("Customer Support Transcript Analyzer")
@@ -48,9 +48,26 @@ def analyze_conversation(text, speaker):
     if speaker == "Agent":
         if "apologize" in text or "understand" in text:
             return "Empathy"
-        elif "help" in text or "resolve" in text:
+        elif "help" in text or "resolve" in text or "assist" in text:
             return "Resolution"
     return "General"
+
+# Function to generate a summary of the agent's performance
+def generate_summary(conversations):
+    agent_assistance = False
+    for speaker, text in conversations:
+        if speaker == "Agent":
+            # Check for resolution-related words
+            if "help" in text or "resolve" in text or "assist" in text:
+                agent_assistance = True
+            # Check if agent apologizes or shows empathy
+            elif "apologize" in text or "understand" in text:
+                agent_assistance = True
+                
+    if agent_assistance:
+        return "The agent was able to assist the customer."
+    else:
+        return "The agent was unable to truly assist the customer."
 
 # Display and process transcript if uploaded
 if uploaded_file is not None:
@@ -87,6 +104,11 @@ if uploaded_file is not None:
         # Show the results in a table
         df = pd.DataFrame(metrics)
         st.write(df)
+        
+        # Display the summary of whether the agent truly assisted or not
+        summary = generate_summary(conversations)
+        st.write("### Agent Assistance Summary")
+        st.write(summary)
         
         # Display charts for analysis
         st.write("Metrics Overview")
