@@ -5,3 +5,5 @@ pandas
 textblob
 seaborn 
 wordcloud
+scikit-learn 
+PyPDF2
