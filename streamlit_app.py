@@ -1,11 +1,6 @@
 import streamlit as st
-import google.generativeai as genai
 import pandas as pd
-import matplotlib.pyplot as plt
 from textblob import TextBlob
-
-# Configure the API key securely from Streamlit's secrets
-genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
 # Streamlit App UI
 st.title("Customer Support Transcript Analyzer")
@@ -36,7 +31,7 @@ def check_profanity(text):
             return True
     return False
 
-# Function to analyze tone
+# Function to analyze tone using TextBlob
 def analyze_tone(text):
     blob = TextBlob(text)
     sentiment = blob.sentiment.polarity
@@ -68,9 +63,9 @@ if uploaded_file is not None:
     # Button to analyze
     if st.button("Analyze Transcript"):
         # Initialize the analysis results
-        metrics = {"Empathy": [], "Clarity": [], "Resolution": [], "Tone": [], "Profanity": [], "Topic": []}
+        metrics = {"Empathy": [], "Resolution": [], "Tone": [], "Profanity": [], "Topic": []}
         
-        # Loop through each conversation pair and analyze with Gemini AI
+        # Loop through each conversation pair and analyze
         for speaker, text in conversations:
             try:
                 # Check for profanity
@@ -78,19 +73,9 @@ if uploaded_file is not None:
                 tone = analyze_tone(text)
                 topic = analyze_conversation(text, speaker)
                 
-                # Generate context-aware analysis with Google Gemini
-                prompt = f"Analyze the following conversation for professionalism, empathy, tone, and context: {text}"
-                model = genai.GenerativeModel('gemini-1.5-flash')
-                response = model.generate_content(prompt)
-                
-                # Simulate AI response (can be improved by real analysis)
-                empathy = "High" if "understand" in response.text else "Low"
-                clarity = "High" if "clear" in response.text else "Low"
-                resolution = "Resolved" if "resolved" in response.text else "Unresolved"
-                
-                metrics["Empathy"].append(empathy)
-                metrics["Clarity"].append(clarity)
-                metrics["Resolution"].append(resolution)
+                # Update metrics
+                metrics["Empathy"].append("Yes" if "Empathy" in topic else "No")
+                metrics["Resolution"].append("Yes" if "Resolution" in topic else "No")
                 metrics["Tone"].append(tone)
                 metrics["Profanity"].append("Yes" if profanity else "No")
                 metrics["Topic"].append(topic)
